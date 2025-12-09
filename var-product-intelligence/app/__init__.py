@@ -1,0 +1,1 @@
+"""VAR Product Intelligence Platform."""
