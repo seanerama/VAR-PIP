@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra env vars like API_KEY_*
 
     def get_api_keys(self) -> dict[str, str]:
         """Get all API keys from environment variables.
