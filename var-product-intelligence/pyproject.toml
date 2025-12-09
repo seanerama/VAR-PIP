@@ -2,7 +2,6 @@
 name = "var-product-intelligence"
 version = "1.0.0"
 description = "Product comparison and recommendation platform for Value-Added Resellers"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # FastAPI and server
