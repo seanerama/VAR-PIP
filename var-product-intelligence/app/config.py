@@ -1,7 +1,11 @@
 """Application configuration using Pydantic settings."""
 
 import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Load .env file into os.environ so API_KEY_* vars are accessible
+load_dotenv()
 
 
 class Settings(BaseSettings):

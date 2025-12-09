@@ -12,6 +12,7 @@ class ExtractionRequest(BaseModel):
     vendor_id: str
     file_content: str  # Base64-encoded PDF
     filename: str
+    save_product: bool = False  # Auto-save extracted product to database
 
 
 class ExtractedField(BaseModel):
@@ -40,6 +41,8 @@ class ExtractionResponse(BaseModel):
     extracted_product: ExtractedProduct
     warnings: list[str] = []
     vendor_created: bool = False  # True if vendor was auto-created
+    product_saved: bool = False  # True if product was saved to database
+    saved_product_id: str | None = None  # ID of saved product
 
 
 class ExtractionErrorResponse(BaseModel):
@@ -55,6 +58,7 @@ class UrlExtractionRequest(BaseModel):
     url: str
     category_id: str
     vendor_id: str
+    save_product: bool = False  # Auto-save extracted product to database
 
 
 class PdfLink(BaseModel):
@@ -83,6 +87,8 @@ class UrlExtractionResponse(BaseModel):
     extracted_product: ExtractedProduct | None = None
     warnings: list[str] = []
     vendor_created: bool = False
+    product_saved: bool = False  # True if product was saved to database
+    saved_product_id: str | None = None  # ID of saved product
 
     # For pdf_listing source type - list of PDFs found
     pdf_links_found: list[PdfLink] = []
@@ -94,6 +100,7 @@ class BatchUrlExtractionRequest(BaseModel):
     pdf_urls: list[str]
     category_id: str
     vendor_id: str
+    save_product: bool = False  # Auto-save extracted products to database
 
 
 class BatchExtractionResult(BaseModel):
@@ -107,6 +114,8 @@ class BatchExtractionResult(BaseModel):
     extracted_product: ExtractedProduct | None = None
     warnings: list[str] = []
     error: str | None = None
+    product_saved: bool = False  # True if product was saved to database
+    saved_product_id: str | None = None  # ID of saved product
 
 
 class BatchUrlExtractionResponse(BaseModel):

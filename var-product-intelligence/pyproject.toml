@@ -28,6 +28,10 @@ dependencies = [
 
     # Utilities
     "python-dateutil>=2.8.2",
+    "python-dotenv>=1.0.0",
+
+    # MCP Server
+    "fastmcp>=0.4.0",
 ]
 
 [project.optional-dependencies]

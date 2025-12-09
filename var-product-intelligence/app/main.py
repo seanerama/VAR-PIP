@@ -1,10 +1,17 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.config import settings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 from app.models.database import create_tables, get_db
 from app.data.wireless_schema import ensure_wireless_category
 from app.api import products, compare, categories, vendors, extract

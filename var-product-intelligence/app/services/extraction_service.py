@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.vendor import Vendor
 from app.models.category import Category
+from app.models.product import Product
 from app.schemas.extract import (
     ExtractionRequest,
     ExtractionResponse,
@@ -36,6 +37,65 @@ class ExtractionService:
         """Initialize with database session."""
         self.db = db
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    def _save_extracted_product(
+        self,
+        extracted_product: ExtractedProduct,
+        vendor_id: str,
+        category_id: str,
+        datasheet_url: str | None = None,
+    ) -> str:
+        """Save extracted product to database.
+
+        Args:
+            extracted_product: The extracted product data
+            vendor_id: Vendor ID
+            category_id: Category ID
+            datasheet_url: Optional URL of the source datasheet
+
+        Returns:
+            The saved product's ID
+
+        Raises:
+            ValueError: If SKU is missing or product already exists
+        """
+        if not extracted_product.sku:
+            raise ValueError("Cannot save product: SKU is missing from extraction")
+
+        # Check for duplicate SKU
+        existing = (
+            self.db.query(Product)
+            .filter(Product.sku == extracted_product.sku)
+            .first()
+        )
+        if existing:
+            raise ValueError(
+                f"Product with SKU '{extracted_product.sku}' already exists (ID: {existing.id})"
+            )
+
+        # Convert extracted attributes to simple values (strip confidence metadata)
+        attributes = {}
+        for key, field in extracted_product.attributes.items():
+            if field.value is not None:
+                attributes[key] = field.value
+
+        # Create product
+        product = Product(
+            id=str(uuid.uuid4()),
+            sku=extracted_product.sku,
+            name=extracted_product.name or extracted_product.sku,
+            vendor_id=vendor_id,
+            category_id=category_id,
+            product_family=extracted_product.product_family,
+            attributes=attributes,
+            datasheet_url=datasheet_url,
+        )
+
+        self.db.add(product)
+        self.db.commit()
+        self.db.refresh(product)
+
+        return product.id
 
     def extract_from_datasheet(
         self, request: ExtractionRequest
@@ -135,13 +195,31 @@ class ExtractionService:
         else:
             status = "failed"
 
+        # Handle auto-save if requested
+        product_saved = False
+        saved_product_id = None
+        warnings = extracted_data.get("warnings", [])
+
+        if request.save_product and status in ("completed", "partial"):
+            try:
+                saved_product_id = self._save_extracted_product(
+                    extracted_product=extracted_product,
+                    vendor_id=request.vendor_id,
+                    category_id=request.category_id,
+                )
+                product_saved = True
+            except ValueError as e:
+                warnings.append(f"Auto-save failed: {str(e)}")
+
         return ExtractionResponse(
             extraction_id=extraction_id,
             status=status,
             confidence_score=confidence_score,
             extracted_product=extracted_product,
-            warnings=extracted_data.get("warnings", []),
+            warnings=warnings,
             vendor_created=vendor_created,
+            product_saved=product_saved,
+            saved_product_id=saved_product_id,
         )
 
     def _build_extraction_prompt(self, category: Category) -> str:
@@ -390,7 +468,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 url=request.url,
                 pdf_content=response.content,
                 category=category,
+                vendor_id=request.vendor_id,
                 vendor_created=vendor_created,
+                save_product=request.save_product,
             )
 
         # Scenario 2 & 3: HTML content
@@ -414,7 +494,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 url=request.url,
                 html_content=html_content,
                 category=category,
+                vendor_id=request.vendor_id,
                 vendor_created=vendor_created,
+                save_product=request.save_product,
             )
 
         raise ValueError(f"Unsupported content type: {content_type}")
@@ -425,7 +507,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         url: str,
         pdf_content: bytes,
         category: Category,
+        vendor_id: str,
         vendor_created: bool,
+        save_product: bool = False,
     ) -> UrlExtractionResponse:
         """Extract from PDF content fetched from URL."""
         pdf_base64 = base64.b64encode(pdf_content).decode("utf-8")
@@ -472,6 +556,23 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         else:
             status = "failed"
 
+        # Handle auto-save if requested
+        product_saved = False
+        saved_product_id = None
+        warnings = extracted_data.get("warnings", [])
+
+        if save_product and status in ("completed", "partial"):
+            try:
+                saved_product_id = self._save_extracted_product(
+                    extracted_product=extracted_product,
+                    vendor_id=vendor_id,
+                    category_id=category.id,
+                    datasheet_url=url,
+                )
+                product_saved = True
+            except ValueError as e:
+                warnings.append(f"Auto-save failed: {str(e)}")
+
         return UrlExtractionResponse(
             extraction_id=extraction_id,
             source_type="pdf",
@@ -479,8 +580,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
             status=status,
             confidence_score=confidence_score,
             extracted_product=extracted_product,
-            warnings=extracted_data.get("warnings", []),
+            warnings=warnings,
             vendor_created=vendor_created,
+            product_saved=product_saved,
+            saved_product_id=saved_product_id,
         )
 
     def _extract_from_html(
@@ -489,7 +592,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         url: str,
         html_content: str,
         category: Category,
+        vendor_id: str,
         vendor_created: bool,
+        save_product: bool = False,
     ) -> UrlExtractionResponse:
         """Extract product data from HTML page content."""
         # Parse HTML and extract text content
@@ -536,6 +641,23 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         else:
             status = "failed"
 
+        # Handle auto-save if requested
+        product_saved = False
+        saved_product_id = None
+        warnings = extracted_data.get("warnings", [])
+
+        if save_product and status in ("completed", "partial"):
+            try:
+                saved_product_id = self._save_extracted_product(
+                    extracted_product=extracted_product,
+                    vendor_id=vendor_id,
+                    category_id=category.id,
+                    datasheet_url=url,
+                )
+                product_saved = True
+            except ValueError as e:
+                warnings.append(f"Auto-save failed: {str(e)}")
+
         return UrlExtractionResponse(
             extraction_id=extraction_id,
             source_type="html",
@@ -543,8 +665,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
             status=status,
             confidence_score=confidence_score,
             extracted_product=extracted_product,
-            warnings=extracted_data.get("warnings", []),
+            warnings=warnings,
             vendor_created=vendor_created,
+            product_saved=product_saved,
+            saved_product_id=saved_product_id,
         )
 
     def _build_html_extraction_prompt(
@@ -707,7 +831,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     url=pdf_url,
                     pdf_content=response.content,
                     category=category,
+                    vendor_id=request.vendor_id,
                     vendor_created=False,  # Only count once
+                    save_product=request.save_product,
                 )
 
                 results.append(
@@ -719,6 +845,8 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                         confidence_score=result.confidence_score,
                         extracted_product=result.extracted_product,
                         warnings=result.warnings,
+                        product_saved=result.product_saved,
+                        saved_product_id=result.saved_product_id,
                     )
                 )
                 successful += 1

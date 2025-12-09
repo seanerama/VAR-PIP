@@ -50,3 +50,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# MCP config (user-specific paths)
+.mcp.json
