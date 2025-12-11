@@ -1,17 +1,11 @@
 {
-  "exported_at": "2025-12-11T15:36:17.576618+00:00",
+  "exported_at": "2025-12-11T15:42:24.524528+00:00",
   "version": "1.0",
   "vendors": [
     {
       "id": "cisco",
       "name": "Cisco",
       "website": null,
-      "partner_portal_url": null
-    },
-    {
-      "id": "aruba",
-      "name": "HPE Aruba Networking",
-      "website": "https://www.arubanetworks.com",
       "partner_portal_url": null
     },
     {
@@ -28,7 +22,7 @@
     },
     {
       "id": "hpe",
-      "name": "Hpe",
+      "name": "HPE",
       "website": null,
       "partner_portal_url": null
     },
@@ -1746,7 +1740,7 @@
     {
       "id": "c0e1a3ad-6d06-482b-b715-b4409f4520ea",
       "sku": "AP-504",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-504",
       "product_family": "500 Series Campus Access Points",
@@ -1784,7 +1778,7 @@
     {
       "id": "be5ec6a1-11c3-4d91-b249-3c62d1d78a4b",
       "sku": "AP-505",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-505",
       "product_family": "500 Series Campus Access Points",
@@ -1822,7 +1816,7 @@
     {
       "id": "4df3c515-83e8-4b70-aa63-944c0b140fd9",
       "sku": "AP-655",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "Aruba AP-655 Wi-Fi 6E Campus Access Point",
       "product_family": "Aruba 650 Series",
@@ -14045,7 +14039,7 @@
     {
       "id": "1d9eb464-a9db-4e37-b873-f53470943aee",
       "sku": "AP-735",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-735 Access Point",
       "product_family": "730 Series Campus Access Points",
@@ -14074,7 +14068,7 @@
     {
       "id": "288d06a2-19b4-432b-92b3-090dd8b232f4",
       "sku": "AP-734",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-734 Access Point",
       "product_family": "730 Series Campus Access Points",
@@ -14104,7 +14098,7 @@
     {
       "id": "5f918b54-724c-43b2-a650-24313d842e4f",
       "sku": "AP-635",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-635 Access Point",
       "product_family": "630 Series Campus Access Points",
@@ -14133,7 +14127,7 @@
     {
       "id": "3742f87e-8f19-425d-8d7b-4dea3afaa75d",
       "sku": "AP-634",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-634 Access Point",
       "product_family": "630 Series Campus Access Points",
@@ -14163,7 +14157,7 @@
     {
       "id": "dafbc7f8-ac5f-437f-a23b-c0725da295aa",
       "sku": "AP-654",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-654 Access Point",
       "product_family": "650 Series Campus Access Points",
@@ -14193,7 +14187,7 @@
     {
       "id": "354ffa59-d28f-466d-89a4-dda3ca74524d",
       "sku": "AP-503",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-503 Access Point",
       "product_family": "500 Series Campus Access Points",
@@ -14222,7 +14216,7 @@
     {
       "id": "0dd3d8c9-c347-42fc-981b-17d291b1ac53",
       "sku": "AP-514",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-514 Access Point",
       "product_family": "510 Series Campus Access Points",
@@ -14252,7 +14246,7 @@
     {
       "id": "75e6c421-9dfb-4fe7-af2f-3b342755fdf3",
       "sku": "AP-515",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-515 Access Point",
       "product_family": "510 Series Campus Access Points",
@@ -14281,7 +14275,7 @@
     {
       "id": "2d375372-2c0b-4e26-a917-c438ef31c7ad",
       "sku": "AP-518",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-518 Hardened Access Point",
       "product_family": "518 Series Hardened Access Points",
@@ -14310,7 +14304,7 @@
     {
       "id": "22a82927-affd-4731-945f-bf742c490a40",
       "sku": "AP-575",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-575 Outdoor Access Point",
       "product_family": "570 Series Outdoor Access Points",
@@ -14339,7 +14333,7 @@
     {
       "id": "6d301e8d-7ef2-42f8-b40b-ee0bb5df8a15",
       "sku": "AP-577",
-      "vendor_id": "aruba",
+      "vendor_id": "hpe_aruba",
       "category_id": "wireless",
       "name": "HPE Aruba Networking AP-577 Outdoor Access Point",
       "product_family": "570 Series Outdoor Access Points",
