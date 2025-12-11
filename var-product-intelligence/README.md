@@ -13,6 +13,7 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 - **PDF Comparisons**: Generate professional side-by-side product comparison documents
 - **MCP Server**: Expose all functionality as tools for LLMs (Claude Code, Claude Desktop)
 - **Datasheet URL Tracking**: Store source datasheet URLs with products for reference
+- **Pre-loaded Seed Data**: 432 products across 5 categories from 10 vendors
 
 ## Supported Product Categories
 
@@ -21,16 +22,34 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 | `wireless` | Wireless Access Points | WiFi generation, radio config, throughput, bands, PoE |
 | `compute` | Servers & Compute Nodes | CPU, RAM, storage, GPU support, form factor |
 | `firewall` | Firewalls & Security Appliances | Throughput, IPS, VPN, ports, form factor |
+| `router` | Enterprise Routers | Throughput, WAN ports, routing protocols, SD-WAN |
+| `switch` | Network Switches | Port count, speed, PoE budget, layer, stacking |
 
 ## Supported Vendors
 
-- **Cisco** - Catalyst wireless, UCS servers, Firepower/Secure Firewall
-- **Cisco Meraki** - MR/CW wireless APs, MX firewalls
-- **Palo Alto Networks** - PA-series firewalls (PA-400 to PA-7500)
-- **Dell** - PowerEdge servers
-- **HPE** - ProLiant servers
-- **HPE Aruba Networking** - Aruba wireless APs
-- **Juniper Mist** - Mist wireless APs
+| Vendor | Products | Categories |
+|--------|----------|------------|
+| **Cisco** | Catalyst wireless, UCS servers, Firepower, Catalyst switches & routers | wireless, compute, firewall, switch, router |
+| **Cisco Meraki** | MR/CW wireless, MS switches, MX firewalls | wireless, switch, firewall |
+| **Palo Alto Networks** | PA-series firewalls (PA-400 to PA-7500) | firewall |
+| **Dell Technologies** | PowerEdge servers | compute |
+| **HPE** | ProLiant servers | compute |
+| **HPE Aruba Networking** | Aruba wireless APs, CX switches | wireless, switch |
+| **HPE Instant On** | Instant On switches | switch |
+| **Juniper** | QFX data center switches, SRX firewalls, MX routers | switch, firewall, router |
+| **Juniper Mist** | Mist wireless APs | wireless |
+
+## Current Product Database
+
+The seed database includes **432 products**:
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Switches | 164 | Catalyst 9200/9300/9400/9500/9600, Meraki MS, Aruba CX, QFX |
+| Firewalls | 93 | Palo Alto PA-series, Cisco Firepower, Meraki MX, Juniper SRX |
+| Routers | 60 | Cisco Catalyst 8000/ISR, Juniper MX |
+| Compute | 60 | Cisco UCS, Dell PowerEdge, HPE ProLiant |
+| Wireless | 55 | Catalyst 9100, Meraki MR/CW, Aruba, Juniper Mist |
 
 ## Tech Stack
 
@@ -63,6 +82,9 @@ uv sync
 # Configure environment
 cp .env.example .env
 # Edit .env with your API keys
+
+# Load seed data (432 products)
+uv run python -m app.scripts.seed load
 ```
 
 ### Running the REST API
@@ -94,6 +116,30 @@ Or add to your `.mcp.json`:
   }
 }
 ```
+
+## Seed Data Management
+
+The project includes a comprehensive seed data system with 432 pre-loaded products.
+
+### Loading Seed Data
+
+```bash
+# Load seed data (skips existing products)
+uv run python -m app.scripts.seed load
+
+# Load seed data with fresh database
+uv run python -m app.scripts.seed load --clear
+```
+
+### Exporting Seed Data
+
+To export the current database to update the seed file:
+
+```bash
+uv run python -m app.scripts.seed export
+```
+
+This exports all vendors, categories, and products to `seed_data.json`.
 
 ## API Endpoints
 
@@ -200,7 +246,10 @@ var-product-intelligence/
 │   ├── schemas/              # Pydantic schemas
 │   ├── services/             # Business logic
 │   │   └── extraction_service.py  # AI extraction
+│   ├── scripts/              # CLI utilities
+│   │   └── seed.py           # Seed data export/import
 │   └── utils/                # Utilities
+├── seed_data.json            # Pre-loaded product database
 ├── pyproject.toml
 ├── .env.example
 └── README.md
