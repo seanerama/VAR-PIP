@@ -59,6 +59,7 @@ class UrlExtractionRequest(BaseModel):
     category_id: str
     vendor_id: str
     save_product: bool = False  # Auto-save extracted product to database
+    extract_all_products: bool = False  # Extract all products from family datasheets
 
 
 class PdfLink(BaseModel):
@@ -66,6 +67,17 @@ class PdfLink(BaseModel):
 
     url: str
     title: str | None = None
+
+
+class MultiProductResult(BaseModel):
+    """Result for a single product in multi-product extraction."""
+
+    sku: str | None = None
+    name: str | None = None
+    extracted_product: ExtractedProduct | None = None
+    product_saved: bool = False
+    saved_product_id: str | None = None
+    error: str | None = None
 
 
 class UrlExtractionResponse(BaseModel):
@@ -81,7 +93,7 @@ class UrlExtractionResponse(BaseModel):
     source_type: str  # pdf, html, pdf_listing
     source_url: str
 
-    # For pdf and html source types - extraction results
+    # For pdf and html source types - extraction results (single product mode)
     status: str | None = None  # completed, partial, failed
     confidence_score: float | None = None
     extracted_product: ExtractedProduct | None = None
@@ -92,6 +104,12 @@ class UrlExtractionResponse(BaseModel):
 
     # For pdf_listing source type - list of PDFs found
     pdf_links_found: list[PdfLink] = []
+
+    # For multi-product extraction mode
+    multi_product_mode: bool = False
+    products_found: int = 0
+    products_saved: int = 0
+    product_results: list[MultiProductResult] = []
 
 
 class BatchUrlExtractionRequest(BaseModel):

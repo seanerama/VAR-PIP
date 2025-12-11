@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import anthropic
+import fitz  # pymupdf for PDF text extraction
 import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from app.schemas.extract import (
     BatchUrlExtractionRequest,
     BatchUrlExtractionResponse,
     BatchExtractionResult,
+    MultiProductResult,
 )
 
 
@@ -273,6 +275,60 @@ Output as valid JSON with this exact structure:
 
 Important: Return ONLY the JSON object, no additional text or markdown formatting."""
 
+    def _build_multi_product_extraction_prompt(self, category: Category) -> str:
+        """Build extraction prompt for multiple products from family datasheets.
+
+        Args:
+            category: Category with attribute schema
+
+        Returns:
+            Multi-product extraction prompt string
+        """
+        schema = category.attribute_schema or {}
+
+        # Extract just the property names for a compact schema reference
+        properties = schema.get("properties", {})
+        attr_list = ", ".join(properties.keys()) if properties else "wifi_generation, radio_config, max_throughput_mbps, bands, form_factor, uplink_speed, poe_requirement"
+
+        return f"""You are a product data extraction specialist. This document is a FAMILY DATASHEET
+containing MULTIPLE distinct products/models. Extract EACH product separately.
+
+Target Category: {category.name}
+Key attributes to extract: {attr_list}
+
+Instructions:
+1. Identify ALL distinct product models/SKUs in the document
+2. For EACH product, extract its specific attributes (they may differ between models)
+3. Do NOT merge products - create separate entries for each model
+4. Use COMPACT output: only include "value" for attributes (no confidence/source_note needed)
+5. Normalize values: booleans as true/false, numbers as numbers, arrays as JSON arrays
+
+Output as valid JSON with this COMPACT structure:
+{{
+  "products": [
+    {{
+      "sku": "MODEL-NUMBER",
+      "name": "Product Name",
+      "product_family": "Series Name",
+      "attributes": {{
+        "wifi_generation": "wifi6",
+        "radio_config": "4x4:4",
+        "max_throughput_mbps": 5400,
+        "form_factor": "indoor",
+        "uplink_speed": "2.5g"
+      }}
+    }}
+  ],
+  "warnings": []
+}}
+
+CRITICAL:
+- Extract EVERY distinct product model as a separate entry
+- Use exact model number/SKU as it appears
+- Keep attribute values simple (just the value, no metadata)
+
+Important: Return ONLY the JSON object, no markdown."""
+
     def _parse_extraction_response(self, response_text: str) -> dict[str, Any]:
         """Parse the extraction response from Claude.
 
@@ -324,7 +380,7 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
             if isinstance(field_data, dict):
                 attributes[key] = ExtractedField(
                     value=field_data.get("value"),
-                    confidence=field_data.get("confidence", "low"),
+                    confidence=field_data.get("confidence") or "medium",
                     source_note=field_data.get("source_note"),
                 )
             else:
@@ -471,6 +527,7 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 vendor_id=request.vendor_id,
                 vendor_created=vendor_created,
                 save_product=request.save_product,
+                extract_all_products=request.extract_all_products,
             )
 
         # Scenario 2 & 3: HTML content
@@ -501,6 +558,22 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
         raise ValueError(f"Unsupported content type: {content_type}")
 
+    def _extract_text_from_pdf(self, pdf_content: bytes) -> str:
+        """Extract text content from PDF using pymupdf.
+
+        Args:
+            pdf_content: Raw PDF bytes
+
+        Returns:
+            Extracted text from all pages
+        """
+        doc = fitz.open(stream=pdf_content, filetype="pdf")
+        text_parts = []
+        for page in doc:
+            text_parts.append(page.get_text())
+        doc.close()
+        return "\n".join(text_parts)
+
     def _extract_from_pdf_url(
         self,
         extraction_id: str,
@@ -510,15 +583,24 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         vendor_id: str,
         vendor_created: bool,
         save_product: bool = False,
+        extract_all_products: bool = False,
     ) -> UrlExtractionResponse:
         """Extract from PDF content fetched from URL."""
         pdf_base64 = base64.b64encode(pdf_content).decode("utf-8")
-        prompt = self._build_extraction_prompt(category)
 
+        # Choose prompt based on extraction mode
+        if extract_all_products:
+            prompt = self._build_multi_product_extraction_prompt(category)
+            max_tokens = 16384  # More tokens for multi-product responses
+        else:
+            prompt = self._build_extraction_prompt(category)
+            max_tokens = 4096
+
+        use_text_fallback = False
         try:
             message = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=4096,
+                max_tokens=max_tokens,
                 messages=[
                     {
                         "role": "user",
@@ -540,10 +622,54 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 ],
             )
         except anthropic.APIError as e:
-            raise ValueError(f"Claude API error: {e}")
+            # Check if error is due to prompt being too long (large PDF)
+            error_str = str(e)
+            if "too long" in error_str.lower() or "maximum" in error_str.lower():
+                use_text_fallback = True
+            else:
+                raise ValueError(f"Claude API error: {e}")
+
+        # Fallback: extract text from PDF and retry with text-only
+        if use_text_fallback:
+            pdf_text = self._extract_text_from_pdf(pdf_content)
+            text_prompt = f"""The following is text extracted from a PDF datasheet.
+Please extract product information from this text.
+
+--- PDF TEXT START ---
+{pdf_text}
+--- PDF TEXT END ---
+
+{prompt}"""
+            try:
+                message = self.client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=max_tokens,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": text_prompt,
+                        }
+                    ],
+                )
+            except anthropic.APIError as e:
+                raise ValueError(f"Claude API error (text fallback): {e}")
 
         response_text = message.content[0].text
         extracted_data = self._parse_extraction_response(response_text)
+
+        # Handle multi-product extraction mode
+        if extract_all_products:
+            return self._handle_multi_product_response(
+                extraction_id=extraction_id,
+                url=url,
+                extracted_data=extracted_data,
+                category=category,
+                vendor_id=vendor_id,
+                vendor_created=vendor_created,
+                save_product=save_product,
+            )
+
+        # Single product extraction (original behavior)
         extracted_product = self._build_extracted_product(extracted_data)
         confidence_score = self._calculate_confidence(
             extracted_product, category.attribute_schema
@@ -584,6 +710,62 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
             vendor_created=vendor_created,
             product_saved=product_saved,
             saved_product_id=saved_product_id,
+        )
+
+    def _handle_multi_product_response(
+        self,
+        extraction_id: str,
+        url: str,
+        extracted_data: dict[str, Any],
+        category: Category,
+        vendor_id: str,
+        vendor_created: bool,
+        save_product: bool,
+    ) -> UrlExtractionResponse:
+        """Handle multi-product extraction response."""
+        warnings = extracted_data.get("warnings", [])
+        products_data = extracted_data.get("products", [])
+        product_results = []
+        products_saved = 0
+
+        for product_data in products_data:
+            # Build extracted product for each item
+            extracted_product = self._build_extracted_product(product_data)
+            result = MultiProductResult(
+                sku=extracted_product.sku,
+                name=extracted_product.name,
+                extracted_product=extracted_product,
+            )
+
+            # Try to save if requested
+            if save_product and extracted_product.sku:
+                try:
+                    saved_id = self._save_extracted_product(
+                        extracted_product=extracted_product,
+                        vendor_id=vendor_id,
+                        category_id=category.id,
+                        datasheet_url=url,
+                    )
+                    result.product_saved = True
+                    result.saved_product_id = saved_id
+                    products_saved += 1
+                except ValueError as e:
+                    result.error = str(e)
+
+            product_results.append(result)
+
+        return UrlExtractionResponse(
+            extraction_id=extraction_id,
+            source_type="pdf",
+            source_url=url,
+            status="completed" if products_data else "failed",
+            confidence_score=0.8 if products_data else 0.0,
+            warnings=warnings,
+            vendor_created=vendor_created,
+            multi_product_mode=True,
+            products_found=len(products_data),
+            products_saved=products_saved,
+            product_results=product_results,
         )
 
     def _extract_from_html(

@@ -190,6 +190,7 @@ def extract_product_from_url(
     category_id: str,
     vendor_id: str,
     save_product: bool = True,
+    extract_all_products: bool = False,
 ) -> str:
     """Extract product data from a datasheet URL using AI.
 
@@ -202,14 +203,20 @@ def extract_product_from_url(
         category_id: Category for the product (e.g., 'wireless_access_points')
         vendor_id: Vendor ID (e.g., 'cisco', 'aruba', 'juniper')
         save_product: Whether to automatically save the extracted product (default True)
+        extract_all_products: If True, extract ALL products from family datasheets separately
+                              instead of merging into one entry (default False)
 
     Returns:
         JSON string with extraction results, including:
         - source_type: 'pdf', 'html', or 'pdf_listing'
-        - extracted_product: The extracted product data (if successful)
+        - extracted_product: The extracted product data (if single product mode)
         - product_saved: Whether the product was saved to database
         - saved_product_id: ID of saved product (if saved)
         - pdf_links_found: List of PDF links (if source_type is 'pdf_listing')
+        - multi_product_mode: True if extract_all_products was enabled
+        - products_found: Number of products found (in multi-product mode)
+        - products_saved: Number of products saved (in multi-product mode)
+        - product_results: List of individual product results (in multi-product mode)
     """
     db = get_db_session()
     try:
@@ -220,6 +227,7 @@ def extract_product_from_url(
             category_id=category_id,
             vendor_id=vendor_id,
             save_product=save_product,
+            extract_all_products=extract_all_products,
         )
 
         result = service.extract_from_url(request)
@@ -237,7 +245,22 @@ def extract_product_from_url(
             "saved_product_id": result.saved_product_id,
         }
 
-        if result.extracted_product:
+        # Handle multi-product mode response
+        if result.multi_product_mode:
+            response["multi_product_mode"] = True
+            response["products_found"] = result.products_found
+            response["products_saved"] = result.products_saved
+            response["product_results"] = [
+                {
+                    "sku": pr.sku,
+                    "name": pr.name,
+                    "product_saved": pr.product_saved,
+                    "saved_product_id": pr.saved_product_id,
+                    "error": pr.error,
+                }
+                for pr in result.product_results
+            ]
+        elif result.extracted_product:
             response["extracted_product"] = {
                 "sku": result.extracted_product.sku,
                 "name": result.extracted_product.name,

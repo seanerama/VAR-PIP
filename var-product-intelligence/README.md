@@ -7,8 +7,30 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 - **Product Management**: Full CRUD operations with flexible JSON attributes per category
 - **Advanced Filtering**: Filter by vendor, price range, lifecycle status, JSON attributes, full-text search
 - **AI-Powered Extraction**: Extract product specs from vendor datasheets (PDF/HTML) using Claude
+  - Single product extraction from individual datasheets
+  - Multi-product extraction from family/portfolio datasheets
+  - Automatic PDF discovery from HTML listing pages
 - **PDF Comparisons**: Generate professional side-by-side product comparison documents
 - **MCP Server**: Expose all functionality as tools for LLMs (Claude Code, Claude Desktop)
+- **Datasheet URL Tracking**: Store source datasheet URLs with products for reference
+
+## Supported Product Categories
+
+| Category | Description | Key Attributes |
+|----------|-------------|----------------|
+| `wireless` | Wireless Access Points | WiFi generation, radio config, throughput, bands, PoE |
+| `compute` | Servers & Compute Nodes | CPU, RAM, storage, GPU support, form factor |
+| `firewall` | Firewalls & Security Appliances | Throughput, IPS, VPN, ports, form factor |
+
+## Supported Vendors
+
+- **Cisco** - Catalyst wireless, UCS servers, Firepower/Secure Firewall
+- **Cisco Meraki** - MR/CW wireless APs, MX firewalls
+- **Palo Alto Networks** - PA-series firewalls (PA-400 to PA-7500)
+- **Dell** - PowerEdge servers
+- **HPE** - ProLiant servers
+- **HPE Aruba Networking** - Aruba wireless APs
+- **Juniper Mist** - Mist wireless APs
 
 ## Tech Stack
 
@@ -16,6 +38,7 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 - **Database**: SQLite (dev) / PostgreSQL (prod)
 - **ORM**: SQLAlchemy
 - **AI**: Anthropic Claude API
+- **PDF Processing**: PyMuPDF (fitz) for text extraction
 - **PDF Generation**: ReportLab
 - **MCP**: FastMCP
 
@@ -133,18 +156,34 @@ All REST API endpoints require an API key header:
 curl -H "X-API-Key: your-api-key" http://localhost:8000/products
 ```
 
-## Example: Extract and Save a Product
+## Example: Extract Products from a Datasheet
+
+### Single Product Extraction
 
 ```bash
-# Extract from Cisco datasheet with auto-save
 curl -X POST http://localhost:8000/extract/from-url \
   -H "X-API-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://www.cisco.com/.../datasheet.pdf",
-    "category_id": "wireless_access_points",
+    "category_id": "wireless",
     "vendor_id": "cisco",
     "save_product": true
+  }'
+```
+
+### Multi-Product Extraction (Family Datasheets)
+
+```bash
+curl -X POST http://localhost:8000/extract/from-url \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.paloaltonetworks.com/.../product-summary-specsheet",
+    "category_id": "firewall",
+    "vendor_id": "palo_alto",
+    "save_product": true,
+    "extract_all_products": true
   }'
 ```
 
@@ -160,6 +199,7 @@ var-product-intelligence/
 │   ├── models/               # SQLAlchemy models
 │   ├── schemas/              # Pydantic schemas
 │   ├── services/             # Business logic
+│   │   └── extraction_service.py  # AI extraction
 │   └── utils/                # Utilities
 ├── pyproject.toml
 ├── .env.example
