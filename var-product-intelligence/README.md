@@ -13,7 +13,7 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 - **PDF Comparisons**: Generate professional side-by-side product comparison documents
 - **MCP Server**: Expose all functionality as tools for LLMs (Claude Code, Claude Desktop)
 - **Datasheet URL Tracking**: Store source datasheet URLs with products for reference
-- **Pre-loaded Seed Data**: 432 products across 5 categories from 10 vendors
+- **Pre-loaded Seed Data**: 524 products across 5 categories from 10 vendors (see [DEVICE_CATALOG.md](DEVICE_CATALOG.md))
 
 ## Supported Product Categories
 
@@ -27,29 +27,32 @@ A FastAPI-based REST API and MCP server for Value-Added Resellers (VARs) to comp
 
 ## Supported Vendors
 
-| Vendor | Products | Categories |
-|--------|----------|------------|
-| **Cisco** | Catalyst wireless, UCS servers, Firepower, Catalyst switches & routers | wireless, compute, firewall, switch, router |
-| **Cisco Meraki** | MR/CW wireless, MS switches, MX firewalls | wireless, switch, firewall |
-| **Palo Alto Networks** | PA-series firewalls (PA-400 to PA-7500) | firewall |
-| **Dell Technologies** | PowerEdge servers | compute |
-| **HPE** | ProLiant servers | compute |
-| **HPE Aruba Networking** | Aruba wireless APs, CX switches | wireless, switch |
-| **HPE Instant On** | Instant On switches | switch |
-| **Juniper** | QFX data center switches, SRX firewalls, MX routers | switch, firewall, router |
-| **Juniper Mist** | Mist wireless APs | wireless |
+| Vendor | Count | Products | Categories |
+|--------|-------|----------|------------|
+| **Cisco** | 204 | Catalyst wireless, UCS servers, Firepower, Catalyst/Nexus switches, 8000 routers | wireless, compute, firewall, switch, router |
+| **Juniper** | 73 | EX/QFX switches, SRX firewalls, ACX/MX routers | switch, firewall, router |
+| **Cisco Meraki** | 70 | MR/CW wireless, MS switches, MX firewalls | wireless, switch, firewall |
+| **HPE Aruba Networking** | 50 | Aruba wireless APs, CX switches | wireless, switch |
+| **Palo Alto Networks** | 36 | PA-series firewalls (PA-400 to PA-7500) | firewall |
+| **Dell Technologies** | 27 | PowerEdge rack servers | compute |
+| **HPE Instant On** | 23 | Instant On switches and wireless APs | switch, wireless |
+| **Fortinet** | 20 | FortiGate firewalls (G-Series, F-Series) | firewall |
+| **HPE** | 16 | ProLiant Gen11 servers (DL, ML, RL series) | compute |
+| **Juniper Mist** | 5 | Mist wireless APs | wireless |
 
 ## Current Product Database
 
-The seed database includes **432 products**:
+The seed database includes **524 products**:
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Switches | 164 | Catalyst 9200/9300/9400/9500/9600, Meraki MS, Aruba CX, QFX |
-| Firewalls | 93 | Palo Alto PA-series, Cisco Firepower, Meraki MX, Juniper SRX |
-| Routers | 60 | Cisco Catalyst 8000/ISR, Juniper MX |
-| Compute | 60 | Cisco UCS, Dell PowerEdge, HPE ProLiant |
-| Wireless | 55 | Catalyst 9100, Meraki MR/CW, Aruba, Juniper Mist |
+| Switches | 213 | Catalyst 9200/9300/9500/9600, Nexus 9000, Meraki MS, Aruba CX, Juniper EX/QFX |
+| Firewalls | 113 | Palo Alto PA-series, Cisco Firepower, FortiGate, Meraki MX, Juniper SRX |
+| Compute | 72 | Cisco UCS C/X-Series, Dell PowerEdge, HPE ProLiant Gen11 |
+| Wireless | 66 | Catalyst 9100/Wi-Fi 7, Meraki MR/CW, Aruba 500-730 series, Juniper Mist |
+| Routers | 60 | Cisco Catalyst 8000 series, Juniper ACX/MX |
+
+For the complete product list, see [DEVICE_CATALOG.md](DEVICE_CATALOG.md).
 
 ## Tech Stack
 
@@ -83,7 +86,7 @@ uv sync
 cp .env.example .env
 # Edit .env with your API keys
 
-# Load seed data (432 products)
+# Load seed data (524 products)
 uv run python -m app.scripts.seed load
 ```
 
@@ -119,7 +122,7 @@ Or add to your `.mcp.json`:
 
 ## Seed Data Management
 
-The project includes a comprehensive seed data system with 432 pre-loaded products.
+The project includes a comprehensive seed data system with 524 pre-loaded products.
 
 ### Loading Seed Data
 
@@ -250,6 +253,7 @@ var-product-intelligence/
 │   │   └── seed.py           # Seed data export/import
 │   └── utils/                # Utilities
 ├── seed_data.json            # Pre-loaded product database
+├── DEVICE_CATALOG.md         # Complete device inventory
 ├── pyproject.toml
 ├── .env.example
 └── README.md
