@@ -22,6 +22,7 @@ class Vendor(Base):
 
     # Relationships
     products = relationship("Product", back_populates="vendor")
+    solutions = relationship("Solution", back_populates="vendor")
 
     def __repr__(self):
         return f"<Vendor(id='{self.id}', name='{self.name}')>"

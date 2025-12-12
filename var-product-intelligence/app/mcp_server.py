@@ -14,8 +14,21 @@ from app.services.product_service import ProductService
 from app.services.filter_service import FilterService
 from app.services.extraction_service import ExtractionService
 from app.services.comparison_service import ComparisonService
+from app.services.solution_service import SolutionService
 from app.schemas.extract import UrlExtractionRequest, BatchUrlExtractionRequest
 from app.schemas.compare import CompareRequest
+from app.schemas.solution import BOMRequest, SolutionCreate, SolutionComponentCreate
+from app.schemas.price_import import (
+    PriceImportRequest,
+    PriceExportRequest,
+    ColumnMapping,
+)
+from app.services.price_import_service import PriceImportService, PRESET_MAPPINGS
+from app.services.cisco_pricing_service import CiscoPricingService
+from app.schemas.cisco_pricing import (
+    CiscoPriceSyncRequest,
+    CiscoPriceLookupRequest,
+)
 
 # Initialize FastMCP server
 mcp = FastMCP(
@@ -634,6 +647,701 @@ def update_product_price(
         })
     finally:
         db.close()
+
+
+# ============== Solution Tools ==============
+
+@mcp.tool()
+def list_solutions(
+    vendor_id: str | None = None,
+    solution_type: str | None = None,
+) -> str:
+    """List available solution templates.
+
+    Solution templates define the components needed to implement a complete
+    vendor solution (e.g., Cisco SD-WAN, Aruba Wireless).
+
+    Args:
+        vendor_id: Filter by vendor (e.g., 'cisco', 'aruba')
+        solution_type: Filter by type (e.g., 'sdwan', 'wireless', 'security')
+
+    Returns:
+        JSON string with list of solutions
+    """
+    db = get_db_session()
+    try:
+        service = SolutionService(db)
+        solutions = service.list_solutions(vendor_id=vendor_id, solution_type=solution_type)
+
+        result = {
+            "total": len(solutions),
+            "solutions": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "vendor_id": s.vendor_id,
+                    "vendor_name": s.vendor_name,
+                    "solution_type": s.solution_type,
+                    "description": s.description,
+                    "component_count": s.component_count,
+                }
+                for s in solutions
+            ],
+        }
+        return json.dumps(result, indent=2)
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def get_solution(solution_id: str) -> str:
+    """Get detailed information about a solution template.
+
+    Returns the solution with all its components, including sizing tiers,
+    product options, and licensing details.
+
+    Args:
+        solution_id: The UUID of the solution
+
+    Returns:
+        JSON string with solution details and components
+    """
+    db = get_db_session()
+    try:
+        service = SolutionService(db)
+        solution = service.get_solution(solution_id)
+
+        if not solution:
+            return json.dumps({"error": f"Solution with ID '{solution_id}' not found"})
+
+        result = {
+            "id": solution.id,
+            "name": solution.name,
+            "vendor_id": solution.vendor_id,
+            "solution_type": solution.solution_type,
+            "description": solution.description,
+            "use_cases": solution.use_cases_list,
+            "documentation_url": solution.documentation_url,
+            "components": [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "component_type": c.component_type,
+                    "description": c.description,
+                    "is_required": c.is_required,
+                    "display_order": c.display_order,
+                    "quantity_type": c.quantity_type,
+                    "quantity_default": c.quantity_default,
+                    "quantity_formula": c.quantity_formula,
+                    "sizing_tiers": c.sizing_tiers,
+                    "product_options": c.product_options,
+                    "license_type": c.license_type,
+                    "license_tiers": c.license_tiers,
+                    "license_term_months": c.license_term_months,
+                    "license_per_unit": c.license_per_unit,
+                    "notes": c.notes,
+                    "features": c.features,
+                }
+                for c in sorted(solution.components, key=lambda x: x.display_order)
+            ],
+        }
+        return json.dumps(result, indent=2)
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def generate_solution_bom(
+    solution_id: str,
+    sites: int | None = None,
+    devices: int | None = None,
+    users: int | None = None,
+    license_tier: str | None = None,
+    license_term_years: int | None = None,
+    ha_enabled: bool = True,
+    product_selections: dict[str, str] | None = None,
+) -> str:
+    """Generate a Bill of Materials (BOM) for a solution.
+
+    Creates a detailed BOM with quantities, SKUs, and pricing based on
+    the solution template and provided sizing parameters.
+
+    Args:
+        solution_id: The UUID of the solution template
+        sites: Number of sites (for SD-WAN, wireless deployments)
+        devices: Number of devices/endpoints (APs, edge routers, etc.)
+        users: Number of users (for user-based licensing)
+        license_tier: License tier (e.g., 'essentials', 'advantage', 'premier')
+        license_term_years: License term in years (1-7)
+        ha_enabled: Whether to include high availability (default True)
+        product_selections: Override specific components with SKUs (component_id -> SKU)
+
+    Returns:
+        JSON string with BOM line items and totals
+    """
+    db = get_db_session()
+    try:
+        service = SolutionService(db)
+
+        request = BOMRequest(
+            solution_id=solution_id,
+            sites=sites,
+            devices=devices,
+            users=users,
+            license_tier=license_tier,
+            license_term_years=license_term_years,
+            ha_enabled=ha_enabled,
+            product_selections=product_selections,
+        )
+
+        bom = service.generate_bom(request)
+
+        result = {
+            "solution_id": bom.solution_id,
+            "solution_name": bom.solution_name,
+            "vendor_id": bom.vendor_id,
+            "vendor_name": bom.vendor_name,
+            "parameters": bom.parameters,
+            "line_items": [
+                {
+                    "component_id": item.component_id,
+                    "component_name": item.component_name,
+                    "component_type": item.component_type,
+                    "quantity": item.quantity,
+                    "sku": item.sku,
+                    "product_name": item.product_name,
+                    "unit_price": item.unit_price,
+                    "extended_price": item.extended_price,
+                    "license_tier": item.license_tier,
+                    "license_term_months": item.license_term_months,
+                    "notes": item.notes,
+                    "is_required": item.is_required,
+                }
+                for item in bom.line_items
+            ],
+            "hardware_total": bom.hardware_total,
+            "licensing_total": bom.licensing_total,
+            "grand_total": bom.grand_total,
+            "notes": bom.notes,
+            "warnings": bom.warnings,
+        }
+        return json.dumps(result, indent=2)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def create_solution(
+    name: str,
+    vendor_id: str,
+    solution_type: str,
+    description: str | None = None,
+    use_cases: list[str] | None = None,
+    documentation_url: str | None = None,
+    components: list[dict] | None = None,
+) -> str:
+    """Create a new solution template.
+
+    Defines a complete vendor solution with its components for BOM generation.
+
+    Args:
+        name: Solution name (e.g., 'Cisco SD-WAN')
+        vendor_id: Vendor ID (e.g., 'cisco')
+        solution_type: Solution type ('sdwan', 'wireless', 'security', 'switching')
+        description: Solution description
+        use_cases: List of use case descriptions
+        documentation_url: Link to vendor documentation
+        components: List of component definitions, each with:
+            - name: Component name
+            - component_type: 'controller', 'edge', 'license', 'subscription', 'software', 'optional'
+            - description: Component description
+            - is_required: Whether required (default True)
+            - display_order: Order in BOM output
+            - quantity_type: 'fixed', 'per_site', 'per_device', 'per_user', 'calculated'
+            - quantity_default: Default quantity
+            - quantity_formula: Formula for calculated quantities
+            - sizing_tiers: List of {max_devices/sites: X, sku: 'SKU'} for scaling
+            - product_options: List of SKU options
+            - license_type: 'subscription', 'perpetual', 'term'
+            - license_tiers: Available tiers like ['essentials', 'advantage']
+            - license_term_months: Available terms like [12, 36, 60]
+            - license_per_unit: 'device', 'user', 'site'
+            - notes: Additional notes
+            - features: Feature list
+
+    Returns:
+        JSON string with created solution
+    """
+    db = get_db_session()
+    try:
+        service = SolutionService(db)
+
+        # Check if solution already exists
+        existing = service.get_solution_by_name(name, vendor_id)
+        if existing:
+            return json.dumps({"error": f"Solution '{name}' already exists for vendor '{vendor_id}'"})
+
+        # Build component list
+        component_creates = []
+        if components:
+            for comp in components:
+                component_creates.append(SolutionComponentCreate(**comp))
+
+        data = SolutionCreate(
+            name=name,
+            vendor_id=vendor_id,
+            solution_type=solution_type,
+            description=description,
+            use_cases=use_cases,
+            documentation_url=documentation_url,
+            components=component_creates,
+        )
+
+        solution = service.create_solution(data)
+
+        return json.dumps({
+            "success": True,
+            "solution": {
+                "id": solution.id,
+                "name": solution.name,
+                "vendor_id": solution.vendor_id,
+                "solution_type": solution.solution_type,
+                "component_count": len(solution.components),
+            },
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def delete_solution(solution_id: str) -> str:
+    """Delete a solution template and all its components.
+
+    Args:
+        solution_id: The UUID of the solution to delete
+
+    Returns:
+        JSON string with success or error message
+    """
+    db = get_db_session()
+    try:
+        service = SolutionService(db)
+        solution = service.get_solution(solution_id)
+
+        if not solution:
+            return json.dumps({"error": f"Solution with ID '{solution_id}' not found"})
+
+        name = solution.name
+        service.delete_solution(solution_id)
+
+        return json.dumps({
+            "success": True,
+            "message": f"Solution '{name}' deleted successfully",
+        })
+    finally:
+        db.close()
+
+
+# ============== Price Import/Export Tools ==============
+
+@mcp.tool()
+def import_prices(
+    file_path: str,
+    price_type: str = "list",
+    format: str = "auto",
+    vendor_id: str | None = None,
+    category_id: str | None = None,
+    create_missing: bool = False,
+    update_existing: bool = True,
+    dry_run: bool = False,
+    custom_sku_column: str | None = None,
+    custom_price_column: str | None = None,
+    custom_name_column: str | None = None,
+    custom_vendor_column: str | None = None,
+) -> str:
+    """Import prices from a CSV file.
+
+    Bulk load pricing data from distributor CSV exports (Ingram Micro, TD SYNNEX, D&H)
+    or custom CSV files. Auto-detects column mappings for common formats.
+
+    Args:
+        file_path: Path to the CSV file to import
+        price_type: Type of price to import ('list' or 'cost')
+        format: CSV format preset or detection mode:
+            - 'auto': Auto-detect format (default)
+            - 'ingram': Ingram Micro format
+            - 'synnex': TD SYNNEX format
+            - 'dnh': D&H format
+            - 'generic': Simple sku,name,price,vendor columns
+            - 'custom': Use custom column mappings
+        vendor_id: Override vendor for all imported prices
+        category_id: Category for newly created products
+        create_missing: Create products that don't exist in database (default False)
+        update_existing: Update prices for existing products (default True)
+        dry_run: Preview changes without saving (default False)
+        custom_sku_column: Column name for SKU (required if format='custom')
+        custom_price_column: Column name for price (required if format='custom')
+        custom_name_column: Column name for product name (optional)
+        custom_vendor_column: Column name for vendor (optional)
+
+    Returns:
+        JSON string with import results including:
+        - total_rows: Number of rows in CSV
+        - matched: Products matched in database
+        - created: New products created
+        - updated: Products with updated prices
+        - skipped: Rows skipped (invalid data, etc.)
+        - errors: Number of errors
+        - items: Details for each row processed
+    """
+    db = get_db_session()
+    try:
+        service = PriceImportService(db)
+
+        # Build custom mapping if provided
+        custom_mapping = None
+        if format == "custom" or custom_sku_column or custom_price_column:
+            if not custom_sku_column or not custom_price_column:
+                return json.dumps({
+                    "error": "Custom column mapping requires both custom_sku_column and custom_price_column"
+                })
+            custom_mapping = ColumnMapping(
+                sku_column=custom_sku_column,
+                price_column=custom_price_column,
+                name_column=custom_name_column,
+                vendor_column=custom_vendor_column,
+            )
+            format = "custom"
+
+        request = PriceImportRequest(
+            file_path=file_path,
+            price_type=price_type,
+            format=format,
+            custom_mapping=custom_mapping,
+            vendor_id=vendor_id,
+            category_id=category_id,
+            create_missing=create_missing,
+            update_existing=update_existing,
+            dry_run=dry_run,
+        )
+
+        result = service.import_prices(request)
+
+        response = {
+            "success": result.success,
+            "file_path": result.file_path,
+            "format_detected": result.format_detected,
+            "price_type": result.price_type,
+            "dry_run": result.dry_run,
+            "total_rows": result.total_rows,
+            "matched": result.matched,
+            "created": result.created,
+            "updated": result.updated,
+            "skipped": result.skipped,
+            "errors": result.errors,
+            "warnings": result.warnings,
+        }
+
+        # Include item details (limited to first 50 for readability)
+        if result.items:
+            response["items"] = [
+                {
+                    "sku": item.sku,
+                    "name": item.name,
+                    "old_price": item.old_price,
+                    "new_price": item.new_price,
+                    "action": item.action,
+                    "message": item.message,
+                }
+                for item in result.items[:50]
+            ]
+            if len(result.items) > 50:
+                response["items_truncated"] = True
+                response["total_items"] = len(result.items)
+
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def export_prices(
+    file_path: str,
+    vendor_id: str | None = None,
+    category_id: str | None = None,
+    include_cost: bool = False,
+    format: str = "generic",
+) -> str:
+    """Export prices to a CSV file.
+
+    Export current product pricing to a CSV file for backup, analysis,
+    or transfer to other systems.
+
+    Args:
+        file_path: Output file path for the CSV
+        vendor_id: Filter by vendor (optional)
+        category_id: Filter by category (optional)
+        include_cost: Include cost prices in output (default False)
+        format: Output format:
+            - 'generic': Basic columns (sku, name, vendor_id, list_price)
+            - 'detailed': Full columns including cost, family, lifecycle, etc.
+
+    Returns:
+        JSON string with export results including:
+        - total_products: Number of products exported
+        - with_prices: Products that have list prices
+        - without_prices: Products missing list prices
+    """
+    db = get_db_session()
+    try:
+        service = PriceImportService(db)
+
+        request = PriceExportRequest(
+            file_path=file_path,
+            vendor_id=vendor_id,
+            category_id=category_id,
+            include_cost=include_cost,
+            format=format,
+        )
+
+        result = service.export_prices(request)
+
+        return json.dumps({
+            "success": result.success,
+            "file_path": result.file_path,
+            "total_products": result.total_products,
+            "with_prices": result.with_prices,
+            "without_prices": result.without_prices,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+# ============== Cisco Pricing Tools ==============
+
+@mcp.tool()
+def sync_cisco_prices(
+    skus: list[str] | None = None,
+    price_list: str = "GLUS",
+    batch_size: int = 50,
+    delay_between_batches: float = 2.0,
+    update_eol_info: bool = False,
+    dry_run: bool = False,
+) -> str:
+    """Sync prices from Cisco Commerce Catalog API to database.
+
+    Fetches current list prices from Cisco's official pricing API and
+    updates the VAR-PIP database. Uses rate limiting to avoid API throttling.
+
+    Args:
+        skus: Specific SKUs to sync. If None, syncs ALL Cisco products in database.
+        price_list: Cisco price list code:
+            - GLUS: US pricing (default)
+            - GLEMEA: EMEA pricing
+            - GLEURO: Euro pricing
+            - GLCA: Canadian pricing
+            - GLGB: UK pricing in GBP
+        batch_size: SKUs per API request (1-200, default 50). Lower = safer for rate limits.
+        delay_between_batches: Seconds between batches (0.5-30, default 2.0)
+        update_eol_info: Also fetch End-of-Life dates (default False)
+        dry_run: Preview changes without saving (default False)
+
+    Returns:
+        JSON string with sync results including updated/unchanged/not_found counts
+
+    Example:
+        >>> sync_cisco_prices(skus=["C9300-24T-E", "C9300-48T-E"])
+        >>> sync_cisco_prices(dry_run=True)  # Preview all Cisco products
+    """
+    db = get_db_session()
+    try:
+        service = CiscoPricingService(db)
+
+        request = CiscoPriceSyncRequest(
+            skus=skus,
+            price_list=price_list,
+            batch_size=batch_size,
+            delay_between_batches=delay_between_batches,
+            update_eol_info=update_eol_info,
+            dry_run=dry_run,
+        )
+
+        result = service.sync_prices_sync(request)
+
+        response = {
+            "success": result.success,
+            "price_list": result.price_list,
+            "dry_run": result.dry_run,
+            "total_requested": result.total_requested,
+            "found": result.found,
+            "updated": result.updated,
+            "unchanged": result.unchanged,
+            "not_found": result.not_found,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+            "warnings": result.warnings,
+        }
+
+        # Include sample of items (first 20)
+        if result.items:
+            response["items"] = [
+                {
+                    "sku": item.sku,
+                    "old_price": item.old_price,
+                    "new_price": item.new_price,
+                    "currency": item.currency,
+                    "action": item.action,
+                    "message": item.message,
+                }
+                for item in result.items[:20]
+            ]
+            if len(result.items) > 20:
+                response["items_truncated"] = True
+                response["total_items"] = len(result.items)
+
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def lookup_cisco_prices(
+    skus: list[str],
+    price_list: str = "GLUS",
+    include_availability: bool = False,
+    include_eol: bool = False,
+) -> str:
+    """Look up real-time Cisco prices without saving to database.
+
+    Use this for quick price checks or quoting. Does NOT update the database.
+    For bulk syncing, use sync_cisco_prices instead.
+
+    Args:
+        skus: List of Cisco SKUs to look up (max 50)
+        price_list: Price list code (default GLUS for US pricing)
+        include_availability: Include availability/lead time info
+        include_eol: Include End-of-Life dates
+
+    Returns:
+        JSON string with current prices from Cisco API
+
+    Example:
+        >>> lookup_cisco_prices(["C9300-24T-E", "CON-SNT-C93002TE"])
+    """
+    if len(skus) > 50:
+        return json.dumps({"error": "Maximum 50 SKUs for real-time lookup"})
+
+    db = get_db_session()
+    try:
+        service = CiscoPricingService(db)
+
+        request = CiscoPriceLookupRequest(
+            skus=skus,
+            price_list=price_list,
+            include_availability=include_availability,
+            include_eol=include_eol,
+        )
+
+        result = service.lookup_prices_sync(request)
+
+        response = {
+            "price_list": result.price_list,
+            "total": result.total,
+            "found": result.found,
+            "not_found": result.not_found,
+            "items": [
+                {
+                    "sku": item.sku,
+                    "description": item.description,
+                    "list_price": item.list_price,
+                    "currency": item.currency,
+                    "product_type": item.product_type,
+                    "erp_family": item.erp_family,
+                    "web_orderable": item.web_orderable,
+                    "lead_time": item.lead_time,
+                    "stockable": item.stockable,
+                    "end_of_sale_date": item.end_of_sale_date,
+                    "last_date_of_support": item.last_date_of_support,
+                    "error": item.error,
+                }
+                for item in result.items
+            ],
+        }
+
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def list_cisco_price_lists() -> str:
+    """List available Cisco price lists.
+
+    Returns all available price list codes with their currencies and regions.
+    Use these codes with sync_cisco_prices or lookup_cisco_prices.
+
+    Returns:
+        JSON string with available price lists
+    """
+    # Import from cisco_connector
+    try:
+        import sys
+        from pathlib import Path
+        connector_path = Path.home() / "cisco_connector" / "src"
+        if str(connector_path) not in sys.path:
+            sys.path.insert(0, str(connector_path))
+        from cisco_catalog_mcp.constants import PRICE_LISTS
+        return json.dumps(PRICE_LISTS, indent=2)
+    except ImportError:
+        # Fallback to common ones
+        return json.dumps({
+            "GLUS": {"description": "US pricing", "currency": "USD"},
+            "GLEMEA": {"description": "EMEA pricing", "currency": "USD"},
+            "GLEURO": {"description": "Euro pricing", "currency": "EUR"},
+            "GLCA": {"description": "Canadian pricing", "currency": "CAD"},
+            "GLGB": {"description": "UK pricing", "currency": "GBP"},
+        }, indent=2)
+
+
+@mcp.tool()
+def list_price_import_formats() -> str:
+    """List available preset formats for price import.
+
+    Shows the column mappings used by each preset format so you can
+    verify which format to use for your distributor's CSV export.
+
+    Returns:
+        JSON string with format names and their column mappings
+    """
+    result = {
+        "formats": {
+            name: {
+                "sku_column": mapping.sku_column,
+                "price_column": mapping.price_column,
+                "name_column": mapping.name_column,
+                "vendor_column": mapping.vendor_column,
+            }
+            for name, mapping in PRESET_MAPPINGS.items()
+        },
+        "auto_detection": {
+            "description": "Use format='auto' to automatically detect the format based on column headers",
+            "supported_distributors": ["Ingram Micro", "TD SYNNEX", "D&H"],
+            "fallback": "Falls back to pattern-based column detection if no preset matches",
+        },
+    }
+    return json.dumps(result, indent=2)
 
 
 # Entry point for running the MCP server
